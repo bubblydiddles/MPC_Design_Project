@@ -25,6 +25,19 @@ u_bound = [-1 1];
 x_upper_bound = [10, 10, 2*pi]';
 x_lower_bound = [-10, -10, 0]';
 
+%% Pole Placement Controller
+d = 0.2*ones(length(t_span),3);
+d(:,2:3) = 0; 
+poles = [0.9, 0.94, 0.95];
+pp_controller = place(discrete_robot.A, discrete_robot.B, poles);
+pp_robot = feedback(discrete_robot, pp_controller);
+x = lsim(pp_robot, d, t_span, x0)';
+u = pp_controller*x;
+
+PLOTTER(x, t_span);
+figure, hold on, plot(t_span, u(1,:)), plot(t_span, u(2,:)), plot(t_span, u(3,:)), legend('$\omega_1$', '$\omega_2$', '$\omega_3$'), title('Control Inputs');
+
+
 %% Infinite Horizon LQR Control
 Q = 0.1*eye(3);
 R = 0.01*eye(3);
@@ -34,7 +47,8 @@ lqr_controlled_robot = ss((robot.A-robot.B*lqr_controller), zeros(3), C, D);
 
 x = lsim(lqr_controlled_robot, zeros(length(t_span),3), t_span, x0)';
 
-PLOTTER(x);
+PLOTTER(x, t_span);
+
 
 %% Plotting the Terminal Set
 bounds = ones(6,1);
@@ -59,9 +73,9 @@ Hx = (Hx+Hx')/2;
 x = zeros(dim.nx,simulation_steps+1);
 x(:,1) = x0;
 
-u1 = zeros(dim.nu, simulation_steps);
+u = zeros(dim.nu, simulation_steps);
 
-for i = 1:simulation_steps
+for i = 1:simulation_steps  
     u_uncon = sdpvar(dim.nu*dim.N,1);
     bound = ones(length(u_uncon), 1);
     Constraint = [u_bound(1)*bound <= u_uncon<= u_bound(2)*bound, kron(ones(dim.N+1,1), x_lower_bound) <= prediction_model.T*x(:,i) + prediction_model.S*u_uncon <= kron(ones(dim.N+1,1), x_upper_bound), u_bound(1)*ones(3,1)  <=lqr_controller*(prediction_model.T(end-2:end,:)*x(:,i) + prediction_model.S(end-2:end,:)*u_uncon)<= u_bound(2)*ones(3,1)];
@@ -69,11 +83,33 @@ for i = 1:simulation_steps
     optimize(Constraint, Objective);
     u_uncon = value(u_uncon);
     
-    u1(:,i) = u_uncon(1:dim.nu)';
-    x(:,i+1) = x(:,i) + robot.B*Ts*u1(:,i);
+    u(:,i) = u_uncon(1:dim.nu)';
+    x(:,i+1) = x(:,i) + robot.B*Ts*u(:,i);
 end
 
-PLOTTER(x);
+PLOTTER(x,t_span);
+figure, hold on, plot(t_span(1:end-1), u(1,:)), plot(t_span(1:end-1), u(2,:)), plot(t_span(1:end-1), u(3,:)), legend('$\omega_1$', '$\omega_2$', '$\omega_3$'), title('Control Inputs');
+
+%% Point-To-Point Controller(State Feedback, With disturbance)
+x = zeros(dim.nx,simulation_steps+1);
+x(:,1) = x0;
+
+u = zeros(dim.nu, simulation_steps);
+
+for i = 1:simulation_steps  
+    u_uncon = sdpvar(dim.nu*dim.N,1);
+    bound = ones(length(u_uncon), 1);
+    Constraint = [u_bound(1)*bound <= u_uncon<= u_bound(2)*bound, kron(ones(dim.N+1,1), x_lower_bound) <= prediction_model.T*x(:,i) + prediction_model.S*u_uncon <= kron(ones(dim.N+1,1), x_upper_bound), u_bound(1)*ones(3,1)  <=lqr_controller*(prediction_model.T(end-2:end,:)*x(:,i) + prediction_model.S(end-2:end,:)*u_uncon)<= u_bound(2)*ones(3,1)];
+    Objective = 0.5*u_uncon'*Hx*u_uncon + (hx*x(:,i))'*u_uncon;
+    optimize(Constraint, Objective);
+    u_uncon = value(u_uncon);
+    
+    u(:,i) = u_uncon(1:dim.nu)';
+    x(:,i+1) = x(:,i) + robot.B*Ts*u(:,i) + discrete_robot.B*[1;0;0]*0.2;
+end
+
+PLOTTER(x,t_span);
+figure, hold on, plot(t_span(1:end-1), u(1,:)), plot(t_span(1:end-1), u(2,:)), plot(t_span(1:end-1), u(3,:)), legend('$\omega_1$', '$\omega_2$', '$\omega_3$'), title('Control Inputs');
 
 %% Observer Design
 
@@ -113,7 +149,7 @@ x = zeros(dime.nx,simulation_steps+1);
 x(:,1) = [x0; d];
 
 xhat = zeros(dime.nx,simulation_steps+1);
-xhat(:,1) = x(:,1) + [0.1, 0, 0, 0]';
+xhat(:,1) = x(:,1) + [0.1, 0, 0, -0.2]';
 
 for i = 1:simulation_steps
     u_uncon = sdpvar(dime.nu*dime.N,1);
@@ -129,8 +165,9 @@ for i = 1:simulation_steps
     xhat(:,i+1) = LTIE.A*xhat(:,i) + LTIE.B*u(:,i) + L*(x(1:3,i) - LTIE.C*xhat(:,i));
 end
 
-PLOTTER(x, xhat);
+PLOTTER(x, t_span, xhat);
 figure, hold on, plot(t_span(1:end-1), u(1,:)), plot(t_span(1:end-1), u(2,:)), plot(t_span(1:end-1), u(3,:)), legend('$\omega_1$', '$\omega_2$', '$\omega_3$'), title('Control Inputs');
+figure, hold on, plot(t_span, xhat(4,:)), plot(t_span, x(4,:)), legend('$\hat{d}$', '$d$'), title('Disturbance Estimation'); 
 
 %% Trajectory Generation
 
