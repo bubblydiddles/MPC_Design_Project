@@ -1,4 +1,6 @@
 # MPC_Design_Project
+-Koushik Kumaran, Anand Srikrishna
+
 This Repository contains the MATLAB Code and corresponding helper functions for the control of an Omnidirectional Mobile Robot as part of the course SC42125-Model Predictive Control
 
 main.m contains the majority of the code and performs the following tasks:
